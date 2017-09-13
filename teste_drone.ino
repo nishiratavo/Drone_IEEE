@@ -5,6 +5,10 @@
 #include <LSM9DS1_Types.h>
 #include <SparkFunLSM9DS1.h>
 
+//--------esc calibrator define------------
+#define MAX_SIGNAL 2000
+#define MIN_SIGNAL 1000
+
 //-------- radio controller defines ------------
 #define CH1 5
 #define CH2 6
@@ -19,7 +23,7 @@
 // a declination to get a more accurate heading. Calculate 
 // your's here:
 // http://www.ngdc.noaa.gov/geomag-web/#declination
-#define DECLINATION -8.58 // Declination (degrees) in Boulder, CO.
+#define DECLINATION 21.58 // Declination (degrees) in Boulder, CO.
 
 
 
@@ -33,10 +37,10 @@ int pitch; // forward backward
 int yaw; // turn clockwise counterclockwise
 
 // ---------PID variables---------------
-int pid_flag = 0;
+int pid_flag = 1;
 float pitch_error;
 float roll_error;
-float p = 1;
+float p = 0.5;
 int pwm1 = 0;
 int pwm2 = 0;
 int pwm3 = 0;
@@ -88,7 +92,10 @@ void printAttitude(float ax, float ay, float az, float mx, float my, float mz)
 void setup()
 {
   Serial.begin(9600);
-
+  esc1.attach(5);
+  esc2.attach(9);
+  esc3.attach(10);
+  esc4.attach(11);
   IMU.settings.device.commInterface = IMU_MODE_I2C;
   IMU.settings.device.mAddress = LSM9DS1_M;
   IMU.settings.device.agAddress = LSM9DS1_AG;
@@ -99,13 +106,24 @@ void setup()
       ;
   }
 
-  Timer1.initialize(20000); // interrupt every 0.02 second -> 50Hz
-  Timer1.attachInterrupt(ISR_timer);
-  /*esc1.attach(6);
-  esc2.attach(9);
-  esc3.attach(10);
-  esc4.attach(11);*/
-  
+  //Timer1.initialize(20000); // interrupt every 0.02 second -> 50Hz
+  //Timer1.attachInterrupt(ISR_timer);
+  //esc1.attach(5);
+  //esc2.attach(9);
+  //esc3.attach(10);
+  //esc4.attach(11);
+  esc1.writeMicroseconds(MIN_SIGNAL);
+  esc2.writeMicroseconds(MIN_SIGNAL);
+  esc3.writeMicroseconds(MIN_SIGNAL);
+  esc4.writeMicroseconds(MIN_SIGNAL);
+  delay(3000);
+  esc1.writeMicroseconds(MAX_SIGNAL);
+  esc2.writeMicroseconds(MAX_SIGNAL);
+  esc3.writeMicroseconds(MAX_SIGNAL);
+  esc4.writeMicroseconds(MAX_SIGNAL);
+
+  //Timer1.initialize(20000); // interrupt every 0.02 second -> 50Hz
+  //Timer1.attachInterrupt(ISR_timer);
 }
  
 void loop()
