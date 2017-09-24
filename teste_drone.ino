@@ -10,10 +10,10 @@
 #define MIN_SIGNAL 1000
 
 //-------- radio controller defines ------------
-#define CH1 5
-#define CH2 6
-#define CH3 7
-#define CH4 8
+#define CH1 2
+#define CH2 4
+#define CH3 8
+#define CH4 12
 
 //----------- IMU defines --------------------------
 #define LSM9DS1_M 0x1E // Would be 0x1C if SDO_M is LOW
@@ -29,6 +29,8 @@
 
 Servo esc1, esc2, esc3, esc4;
 LSM9DS1 IMU;
+
+int count = 0;
 
 // ----------radio controller variables-------------
 int climb; // elevation
@@ -51,13 +53,43 @@ float measured_yaw;
 float measured_roll;
 float measured_pitch;
 
+float filtered_yaw = 0;
+float filtered_roll = 0;
+float filtered_pitch = 0;
+
+float ax;
+float ay;
+float az;
+
+float mx;
+float my;
+float mz;
+
+float mean_yaw;
+float mean_roll;
+float mean_pitch;
 
 
-void ISR_timer() // timer interrupt for sampling time
+
+ISR(ANALOG_COMP_vect)
 {
+  count++;
   pid_flag = 1;
 }
 
+
+/*ISR(TIMER2_OVF_vect) // timer interrupt for sampling time
+{
+  pid_flag = 1;
+}*/
+
+/*void timer2() //timer for data aquisition
+{
+  TCCR2B |= (1<<CS22) | (1<<CS21) | (1<<CS20);
+  TCNT2 = 1;
+  TIMSK2 |= (1<<TOIE2);
+  sei();
+}*/
 
 // Calculate pitch, roll, and heading.
 // Pitch/roll calculations take from this app note:
@@ -85,13 +117,20 @@ void printAttitude(float ax, float ay, float az, float mx, float my, float mz)
   measured_yaw *= 180.0 / PI;
   measured_pitch *= 180.0 / PI;
   measured_roll  *= 180.0 / PI;
+
   
+}
+
+void set_analog_comp()
+{
+  ACSR |= (1<<ACIE) | (1<<ACIS1) | (1<<ACIS0);
 }
 
 
 void setup()
 {
   Serial.begin(9600);
+  set_analog_comp();
   esc1.attach(5);
   esc2.attach(9);
   esc3.attach(10);
@@ -106,6 +145,23 @@ void setup()
       ;
   }
 
+  for (int i = 0; i < 20; ++i)
+  {
+    IMU.readAccel();
+    IMU.readMag();
+    printAttitude(IMU.ax, IMU.ay, IMU.az, -IMU.my, -IMU.mx, IMU.mz);
+    mean_yaw += measured_yaw;
+    mean_roll += measured_roll;
+    mean_pitch += measured_pitch;
+  }
+
+  mean_yaw = measured_yaw/20;
+  mean_pitch = mean_pitch/20;
+  mean_roll = mean_roll/20;
+  
+
+
+
   //Timer1.initialize(20000); // interrupt every 0.02 second -> 50Hz
   //Timer1.attachInterrupt(ISR_timer);
   //esc1.attach(5);
@@ -116,12 +172,13 @@ void setup()
   esc2.writeMicroseconds(MIN_SIGNAL);
   esc3.writeMicroseconds(MIN_SIGNAL);
   esc4.writeMicroseconds(MIN_SIGNAL);
-  delay(3000);
+  //delay(3000);
   esc1.writeMicroseconds(MAX_SIGNAL);
   esc2.writeMicroseconds(MAX_SIGNAL);
   esc3.writeMicroseconds(MAX_SIGNAL);
   esc4.writeMicroseconds(MAX_SIGNAL);
 
+  //timer2();
   //Timer1.initialize(20000); // interrupt every 0.02 second -> 50Hz
   //Timer1.attachInterrupt(ISR_timer);
 }
@@ -141,9 +198,19 @@ void loop()
   {
     IMU.readAccel();
     IMU.readMag();
-    printAttitude(IMU.ax, IMU.ay, IMU.az, -IMU.my, -IMU.mx, IMU.mz);
-    roll_error = measured_roll - 0;
-    pitch_error = measured_pitch - 0;
+    ax = ax*0.00001 + IMU.ax;
+    ay = ay*0.00001 + IMU.ay;
+    az = az*0.00001 + IMU.az;
+
+    mx = mx*0.00001 + IMU.mx;
+    my = my*0.00001 + IMU.my;
+    mz = mz*0.00001 + IMU.mz;
+
+    printAttitude(ax, ay, az, -my, -mx, mz);
+    filtered_roll = filtered_roll*0.0000001  + measured_roll;
+    filtered_pitch = filtered_pitch*0.0000001 + measured_pitch;
+    roll_error = filtered_roll - mean_roll;
+    pitch_error = filtered_pitch - mean_pitch;
     pwm1 = pwm1 + p*roll_error + p*pitch_error;
     pwm2 = pwm2 - p*roll_error - p*pitch_error;
     pwm3 = pwm3 + p*roll_error - p*pitch_error;
@@ -187,13 +254,14 @@ void loop()
     // needs to see which motor does what and IMU position
     //pwm = pwm -p*error;
     pid_flag = 0;
+    //count++;
   }
 
   // ----------------------------------------------------
   /*climb = map(elevation, 968, 1950, 0, 160);
   roll = map(leftRight, 900, 1900, -22, 22);
   pitch = map(fowBack, 900, 1900, -22, 22);*/
-
+  Serial.println(count);
   Serial.print("esc1 = ");
   Serial.print(climb + pwm1);
   Serial.print("  ");
